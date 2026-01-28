@@ -59,15 +59,39 @@ export const bufferToWav = (buffer, bitDepth, downsampleFactor) => {
     const originalSampleRate = buffer.sampleRate;
 
     // PHYSICAL DOWNSAMPLING for Export
-    const effectiveResampleStep = Math.max(1, Math.floor(downsampleFactor));
-    const newSampleRate = Math.round(originalSampleRate / effectiveResampleStep);
+    let effectiveResampleStep = Math.max(1, Math.floor(downsampleFactor));
 
-    const newLength = Math.ceil(buffer.length / effectiveResampleStep);
+    // 16MB LIMIT ENFORCEMENT
+    // Target Size (Bytes) = 16 * 1024 * 1024 = 16777216
+    const TARGET_SIZE_BYTES = 16000000; // slightly under 16MB for safety
 
     const is8Bit = bitDepth <= 8;
     const bytesPerSample = is8Bit ? 1 : 2;
+    // Current duration
+    const duration = buffer.duration;
 
-    const length = newLength * numOfChan * bytesPerSample + 44 + 8;
+    // Approx Size = SampleRate * Channels * BytesPerSample * Duration + 44
+    // We want Approx Size <= TARGET_SIZE_BYTES
+    // So: Max SampleRate = (TARGET / Duration / Channels / BytesPerSample)
+
+    const maxSafeSampleRate = (TARGET_SIZE_BYTES - 100) / duration / numOfChan / bytesPerSample;
+
+    // Current planned sample rate
+    let plannedSampleRate = originalSampleRate / effectiveResampleStep;
+
+    if (plannedSampleRate > maxSafeSampleRate) {
+        // We need to downsample MORE to fit
+        // New Step = Original / MaxSafe
+        effectiveResampleStep = Math.ceil(originalSampleRate / maxSafeSampleRate);
+        console.log(`Auto-downsampling enabled. Target SR: ${maxSafeSampleRate}, New Step: ${effectiveResampleStep}`);
+    }
+
+    const newSampleRate = Math.round(originalSampleRate / effectiveResampleStep);
+
+    // Use CEIL to ensure we have enough space for all iterations
+    const newLength = Math.ceil(buffer.length / effectiveResampleStep);
+
+    const length = newLength * numOfChan * bytesPerSample + 44 + 8; // +8 safe padding
 
     const bufferArr = new ArrayBuffer(length);
     const view = new DataView(bufferArr);
@@ -76,9 +100,11 @@ export const bufferToWav = (buffer, bitDepth, downsampleFactor) => {
 
     let pos = 44;
 
+    // Extract channel data
     for (i = 0; i < buffer.numberOfChannels; i++)
         channels.push(buffer.getChannelData(i));
 
+    // Write Data
     for (let originalPos = 0; originalPos < buffer.length; originalPos += effectiveResampleStep) {
         if (pos >= length) break;
 
@@ -125,32 +151,18 @@ export const bufferToWav = (buffer, bitDepth, downsampleFactor) => {
 }
 
 export const bufferToMp3 = (buffer, downsampleFactor) => {
-    // MP3 Encoding using lamejs
-    // MP3 supports specific sample rates. We should stick to standard if possible, 
-    // or let lame handle resampling. But since we have manually downsampled data in the buffer (by holding samples),
-    // we should ideally resample it properly.
-    // Lamejs expects 16-bit integer input.
-
     const channels = buffer.numberOfChannels;
     const sampleRate = buffer.sampleRate;
 
-    // We will pass the full buffer to lame, but if we have physical downsampling intent
-    // (effectiveResampleStep > 1), we should skip samples to feed lame the "low fidelity" rate?
-    // Lame might complain about non-standard rates (e.g. 44100/10 = 4410).
-    // Safer approach for MP3 is to keep standard rate 44.1kHz but encode the "blocky" signal.
-    // This compresses very well anyway because the data is repetitive (10 samples same value).
-
-    const mp3Encoder = new lamejs.Mp3Encoder(channels, sampleRate, 128); // 128kbps standard
+    const mp3Encoder = new lamejs.Mp3Encoder(channels, sampleRate, 128);
 
     const maxSamples = 1152;
     const samplesLeft = buffer.getChannelData(0);
     const samplesRight = channels > 1 ? buffer.getChannelData(1) : undefined;
 
-    // Convert float to 16-bit PCMs
     const sampleBlockSize = 1152;
     const mp3Data = [];
 
-    // Process in blocks
     const length = samplesLeft.length;
     for (let i = 0; i < length; i += sampleBlockSize) {
         const leftChunk = [];
@@ -166,7 +178,7 @@ export const bufferToMp3 = (buffer, downsampleFactor) => {
                 valRight = (valRight < 0 ? valRight * 32768 : valRight * 32767) | 0;
                 rightChunk.push(valRight);
             } else {
-                rightChunk.push(valLeft); // Mono -> Stereo copy if needed, or lame logic handles mono
+                rightChunk.push(valLeft);
             }
         }
 
