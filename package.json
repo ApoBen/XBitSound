@@ -13,7 +13,6 @@
     "deploy": "gh-pages -d dist"
   },
   "dependencies": {
-    "@breezystack/lamejs": "^1.2.7",
     "@tailwindcss/vite": "^4.1.18",
     "framer-motion": "^12.29.2",
     "lucide-react": "^0.563.0",

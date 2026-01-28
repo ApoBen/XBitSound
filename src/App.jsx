@@ -3,7 +3,7 @@ import DropZone from './components/DropZone';
 import BitCrusherControls from './components/BitCrusherControls';
 import AudioPlayer from './components/AudioPlayer';
 import Visualizer from './components/Visualizer';
-import { decodeAudio, processAudio, bufferToWav, bufferToMp3 } from './utils/audioProcessor';
+import { decodeAudio, processAudio, bufferToWav } from './utils/audioProcessor';
 import { motion, AnimatePresence } from 'framer-motion';
 
 function App() {
@@ -23,7 +23,7 @@ function App() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [fileName, setFileName] = useState('');
   const [currentTime, setCurrentTime] = useState(0);
-  const [exportFormat, setExportFormat] = useState('wav');
+
   const [volume, setVolume] = useState(0.8);
   const [isMuted, setIsMuted] = useState(false);
 
@@ -84,8 +84,6 @@ function App() {
   useEffect(() => {
     if (!originalBuffer) return;
 
-    let worker;
-
     const runProcessing = async () => {
       setIsProcessing(true);
       setProcessedUrl(null);
@@ -99,67 +97,17 @@ function App() {
         const newBuffer = processAudio(originalBuffer, debouncedBitDepth, debouncedDownsampleFactor, ctx);
         setProcessedBuffer(newBuffer);
 
-        if (exportFormat === 'mp3') {
-          // ASYNC WORKER ENCODING
-          worker = new Worker(new URL('./workers/mp3.worker.js', import.meta.url), { type: 'module' });
+        // SYNCHRONOUS WAV EXPORT
+        const blob = bufferToWav(newBuffer, debouncedBitDepth, debouncedDownsampleFactor);
 
-          const channels = newBuffer.numberOfChannels;
-          const samplesLeft = newBuffer.getChannelData(0);
-          const samplesRight = channels > 1 ? newBuffer.getChannelData(1) : null;
-
-          worker.postMessage({
-            channels,
-            sampleRate: newBuffer.sampleRate,
-            samplesLeft,
-            samplesRight
-          });
-
-          // Watchdog Timer (20s timeout)
-          const timeoutId = setTimeout(() => {
-            worker.terminate();
-            setIsProcessing(false);
-            alert("MP3 Encoding Timeout. File might be too large or browser is blocking the worker.");
-          }, 20000);
-
-          worker.onmessage = (e) => {
-            clearTimeout(timeoutId);
-
-            if (e.data.type === 'success') {
-              if (processedUrl) URL.revokeObjectURL(processedUrl);
-              setProcessedUrl(URL.createObjectURL(e.data.blob));
-              setIsProcessing(false);
-              if (isPlaying) stopAudio(false);
-            } else {
-              alert("MP3 Encoding Error: " + e.data.message);
-              setIsProcessing(false);
-            }
-            worker.terminate();
-          };
-
-          worker.onerror = (e) => {
-            clearTimeout(timeoutId);
-            console.error("Worker Error details:", e);
-            alert("MP3 Worker Error. See console.");
-            setIsProcessing(false);
-            worker.terminate();
-          };
-
-          // Return safely, don't set isProcessing(false) yet, wait for worker
-          return;
-
-        } else {
-          // SYNCHRONOUS WAV EXPORT (Fast enough usually, or <200ms)
-          const blob = bufferToWav(newBuffer, debouncedBitDepth, debouncedDownsampleFactor);
-
-          if (processedUrl) URL.revokeObjectURL(processedUrl);
-          setProcessedUrl(URL.createObjectURL(blob));
-          if (isPlaying) stopAudio(false);
-          setIsProcessing(false);
-        }
+        if (processedUrl) URL.revokeObjectURL(processedUrl);
+        setProcessedUrl(URL.createObjectURL(blob));
+        if (isPlaying) stopAudio(false);
 
       } catch (err) {
         console.error("Processing error:", err);
         alert("Error generating audio: " + (err.message || String(err)));
+      } finally {
         setIsProcessing(false);
       }
     };
@@ -168,9 +116,8 @@ function App() {
 
     return () => {
       if (processedUrl) URL.revokeObjectURL(processedUrl);
-      if (worker) worker.terminate();
     };
-  }, [originalBuffer, debouncedBitDepth, debouncedDownsampleFactor, exportFormat]);
+  }, [originalBuffer, debouncedBitDepth, debouncedDownsampleFactor]);
 
   const updateProgress = () => {
     if (audioContextRef.current && isPlaying) {
@@ -291,8 +238,7 @@ function App() {
     if (!processedUrl) return;
     const a = document.createElement('a');
     a.href = processedUrl;
-    const ext = exportFormat === 'mp3' ? 'mp3' : 'wav';
-    a.download = `8bit_${fileName.replace(/\.[^/.]+$/, "")}.${ext}`;
+    a.download = `8bit_${fileName.replace(/\.[^/.]+$/, "")}.wav`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -321,21 +267,7 @@ function App() {
             </h1>
           </div>
 
-          {/* Format Toggle */}
-          <div className="flex bg-white/5 rounded-lg p-1 border border-white/10">
-            <button
-              onClick={() => setExportFormat('mp3')}
-              className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${exportFormat === 'mp3' ? 'bg-cyan-500 text-black shadow-lg' : 'text-white/50 hover:text-white'}`}
-            >
-              MP3
-            </button>
-            <button
-              onClick={() => setExportFormat('wav')}
-              className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${exportFormat === 'wav' ? 'bg-purple-500 text-white shadow-lg' : 'text-white/50 hover:text-white'}`}
-            >
-              WAV
-            </button>
-          </div>
+
         </header>
 
         {/* Main Content */}
@@ -370,7 +302,7 @@ function App() {
                           {fileName}
                         </h2>
                         <p className="text-cyan-400/80 font-mono text-xs uppercase tracking-wide">
-                          {originalBuffer.duration.toFixed(1)}s • {bitDepth} BIT • {exportFormat.toUpperCase()}
+                          {originalBuffer.duration.toFixed(1)}s • {bitDepth} BIT • WAV
                         </p>
                       </div>
                       <button
