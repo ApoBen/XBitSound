@@ -1,3 +1,5 @@
+import { Mp3Encoder } from 'lamejs';
+
 export const decodeAudio = async (file) => {
     const arrayBuffer = await file.arrayBuffer();
     const audioContext = new (window.AudioContext || window.webkitAudioContext)();
@@ -60,35 +62,29 @@ export const bufferToWav = (buffer, bitDepth, downsampleFactor) => {
     const effectiveResampleStep = Math.max(1, Math.floor(downsampleFactor));
     const newSampleRate = Math.round(originalSampleRate / effectiveResampleStep);
 
-    // FIX: Use CEIL to ensure we have enough space for all iterations
     const newLength = Math.ceil(buffer.length / effectiveResampleStep);
 
-    // 8-BIT OPTIMIZATION
     const is8Bit = bitDepth <= 8;
     const bytesPerSample = is8Bit ? 1 : 2;
 
-    // Add extra padding bytes just to be extremely safe against off-by-one writes via views
-    const length = newLength * numOfChan * bytesPerSample + 44 + 8; // +8 safe padding
+    const length = newLength * numOfChan * bytesPerSample + 44 + 8;
 
     const bufferArr = new ArrayBuffer(length);
     const view = new DataView(bufferArr);
     const channels = [];
     let i;
 
-    // Start writing at data chunk (header later)
     let pos = 44;
 
-    // Extract channel data
     for (i = 0; i < buffer.numberOfChannels; i++)
         channels.push(buffer.getChannelData(i));
 
-    // Write Data
     for (let originalPos = 0; originalPos < buffer.length; originalPos += effectiveResampleStep) {
-        if (pos >= length) break; // Safety break
+        if (pos >= length) break;
 
         for (i = 0; i < numOfChan; i++) {
             let val = channels[i][originalPos];
-            if (!val && val !== 0) val = 0; // check NaN
+            if (!val && val !== 0) val = 0;
             val = Math.max(-1, Math.min(1, val));
 
             if (is8Bit) {
@@ -103,11 +99,9 @@ export const bufferToWav = (buffer, bitDepth, downsampleFactor) => {
         }
     }
 
-    // Update actual data chunk size to what we wrote (excluding header)
     const dataSize = pos - 44;
-    const fileSize = pos; // RIFF chunk size does not include first 8 bytes
+    const fileSize = pos;
 
-    // Helper to write at specific offset
     const setUint32 = (data, p) => view.setUint32(p, data, true);
     const setUint16 = (data, p) => view.setUint16(p, data, true);
 
@@ -119,14 +113,73 @@ export const bufferToWav = (buffer, bitDepth, downsampleFactor) => {
     setUint32(16, 16); // length = 16
     setUint16(1, 20); // PCM (uncompressed)
     setUint16(numOfChan, 22);
-    setUint32(newSampleRate, 24); // ACTUAL NEW SAMPLE RATE
-    setUint32(newSampleRate * numOfChan * bytesPerSample, 28); // byte rate
-    setUint16(numOfChan * bytesPerSample, 32); // block-align
-    setUint16(is8Bit ? 8 : 16, 34); // bits per sample
+    setUint32(newSampleRate, 24);
+    setUint32(newSampleRate * numOfChan * bytesPerSample, 28);
+    setUint16(numOfChan * bytesPerSample, 32);
+    setUint16(is8Bit ? 8 : 16, 34);
 
     setUint32(0x61746164, 36); // "data" - chunk
-    setUint32(dataSize, 40); // chunk length (filesize - header)
+    setUint32(dataSize, 40);
 
-    // Slice buffer to actual used size so no garbage at end
     return new Blob([bufferArr.slice(0, pos)], { type: 'audio/wav' });
+}
+
+export const bufferToMp3 = (buffer, downsampleFactor) => {
+    // MP3 Encoding using lamejs
+    // MP3 supports specific sample rates. We should stick to standard if possible, 
+    // or let lame handle resampling. But since we have manually downsampled data in the buffer (by holding samples),
+    // we should ideally resample it properly.
+    // Lamejs expects 16-bit integer input.
+
+    const channels = buffer.numberOfChannels;
+    const sampleRate = buffer.sampleRate;
+
+    // We will pass the full buffer to lame, but if we have physical downsampling intent
+    // (effectiveResampleStep > 1), we should skip samples to feed lame the "low fidelity" rate?
+    // Lame might complain about non-standard rates (e.g. 44100/10 = 4410).
+    // Safer approach for MP3 is to keep standard rate 44.1kHz but encode the "blocky" signal.
+    // This compresses very well anyway because the data is repetitive (10 samples same value).
+
+    const mp3Encoder = new Mp3Encoder(channels, sampleRate, 128); // 128kbps standard
+
+    const maxSamples = 1152;
+    const samplesLeft = buffer.getChannelData(0);
+    const samplesRight = channels > 1 ? buffer.getChannelData(1) : undefined;
+
+    // Convert float to 16-bit PCMs
+    const sampleBlockSize = 1152;
+    const mp3Data = [];
+
+    // Process in blocks
+    const length = samplesLeft.length;
+    for (let i = 0; i < length; i += sampleBlockSize) {
+        const leftChunk = [];
+        const rightChunk = [];
+
+        for (let j = 0; j < sampleBlockSize && (i + j) < length; j++) {
+            let valLeft = samplesLeft[i + j];
+            valLeft = (valLeft < 0 ? valLeft * 32768 : valLeft * 32767) | 0;
+            leftChunk.push(valLeft);
+
+            if (samplesRight) {
+                let valRight = samplesRight[i + j];
+                valRight = (valRight < 0 ? valRight * 32768 : valRight * 32767) | 0;
+                rightChunk.push(valRight);
+            } else {
+                rightChunk.push(valLeft); // Mono -> Stereo copy if needed, or lame logic handles mono
+            }
+        }
+
+        const mp3buf = mp3Encoder.encodeBuffer(leftChunk, rightChunk);
+        if (mp3buf.length > 0) {
+            mp3Data.push(mp3buf);
+        }
+    }
+
+    const mp3buf = mp3Encoder.flush();
+    if (mp3buf.length > 0) {
+        mp3Data.push(mp3buf);
+    }
+
+    return new Blob(mp3Data, { type: 'audio/mp3' });
 }

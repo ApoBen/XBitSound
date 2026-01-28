@@ -3,7 +3,7 @@ import DropZone from './components/DropZone';
 import BitCrusherControls from './components/BitCrusherControls';
 import AudioPlayer from './components/AudioPlayer';
 import Visualizer from './components/Visualizer';
-import { decodeAudio, processAudio, bufferToWav } from './utils/audioProcessor';
+import { decodeAudio, processAudio, bufferToWav, bufferToMp3 } from './utils/audioProcessor';
 import { motion, AnimatePresence } from 'framer-motion';
 
 function App() {
@@ -16,6 +16,7 @@ function App() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [fileName, setFileName] = useState('');
   const [currentTime, setCurrentTime] = useState(0);
+  const [exportFormat, setExportFormat] = useState('mp3'); // Default to MP3 for size
 
   const audioContextRef = useRef(null);
   const sourceNodeRef = useRef(null);
@@ -70,12 +71,18 @@ function App() {
         const ctx = getAudioContext();
 
         const newBuffer = processAudio(originalBuffer, bitDepth, downsampleFactor, ctx);
-
         setProcessedBuffer(newBuffer);
 
-        const wavBlob = bufferToWav(newBuffer, bitDepth, downsampleFactor);
+        // Generate Blob based on selected format
+        let blob;
+        if (exportFormat === 'mp3') {
+          blob = bufferToMp3(newBuffer, downsampleFactor);
+        } else {
+          blob = bufferToWav(newBuffer, bitDepth, downsampleFactor);
+        }
+
         if (processedUrl) URL.revokeObjectURL(processedUrl);
-        const url = URL.createObjectURL(wavBlob);
+        const url = URL.createObjectURL(blob);
         setProcessedUrl(url);
 
         if (isPlaying) {
@@ -83,7 +90,6 @@ function App() {
         }
       } catch (err) {
         console.error("Processing error:", err);
-        // Auto-recover logic or UI feedback could go here
       } finally {
         setIsProcessing(false);
       }
@@ -94,7 +100,7 @@ function App() {
     return () => {
       if (processedUrl) URL.revokeObjectURL(processedUrl);
     };
-  }, [originalBuffer, bitDepth, downsampleFactor]);
+  }, [originalBuffer, bitDepth, downsampleFactor, exportFormat]);
 
   const updateProgress = () => {
     if (audioContextRef.current && isPlaying) {
@@ -202,7 +208,8 @@ function App() {
     if (!processedUrl) return;
     const a = document.createElement('a');
     a.href = processedUrl;
-    a.download = `8bit_${fileName.replace(/\.[^/.]+$/, "")}.wav`;
+    const ext = exportFormat === 'mp3' ? 'mp3' : 'wav';
+    a.download = `8bit_${fileName.replace(/\.[^/.]+$/, "")}.${ext}`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -228,6 +235,22 @@ function App() {
             <h1 className="text-2xl md:text-3xl font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-white to-white/70">
               XBitSound
             </h1>
+          </div>
+
+          {/* Format Toggle */}
+          <div className="flex bg-white/5 rounded-lg p-1 border border-white/10">
+            <button
+              onClick={() => setExportFormat('mp3')}
+              className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${exportFormat === 'mp3' ? 'bg-cyan-500 text-black shadow-lg' : 'text-white/50 hover:text-white'}`}
+            >
+              MP3
+            </button>
+            <button
+              onClick={() => setExportFormat('wav')}
+              className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${exportFormat === 'wav' ? 'bg-purple-500 text-white shadow-lg' : 'text-white/50 hover:text-white'}`}
+            >
+              WAV
+            </button>
           </div>
         </header>
 
@@ -263,7 +286,7 @@ function App() {
                           {fileName}
                         </h2>
                         <p className="text-cyan-400/80 font-mono text-xs uppercase tracking-wide">
-                          {originalBuffer.duration.toFixed(1)}s • {bitDepth} BIT • {downsampleFactor === 1 ? 'ORIGINAL' : 'DECIMATED'}
+                          {originalBuffer.duration.toFixed(1)}s • {bitDepth} BIT • {exportFormat.toUpperCase()}
                         </p>
                       </div>
                       <button
