@@ -10,7 +10,7 @@ export default defineConfig({
     tailwindcss(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['pwa-icon.png'],
+      includeAssets: ['vite.svg'],
       manifest: {
         name: 'XBitSound - 8-Bit LoFi Audio',
         short_name: 'XBitSound',
@@ -21,9 +21,9 @@ export default defineConfig({
         orientation: 'portrait',
         icons: [
           {
-            src: 'pwa-icon.png',
-            sizes: '512x512',
-            type: 'image/png',
+            src: 'vite.svg',
+            sizes: '192x192 512x512',
+            type: 'image/svg+xml',
             purpose: 'any maskable'
           }
         ]
