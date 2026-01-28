@@ -16,7 +16,7 @@ function App() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [fileName, setFileName] = useState('');
   const [currentTime, setCurrentTime] = useState(0);
-  const [exportFormat, setExportFormat] = useState('mp3'); // Default to MP3 for size
+  const [exportFormat, setExportFormat] = useState('wav'); // Default to WAV as requested
 
   const audioContextRef = useRef(null);
   const sourceNodeRef = useRef(null);

@@ -1,4 +1,4 @@
-import { Mp3Encoder } from 'lamejs';
+import * as lamejs from 'lamejs';
 
 export const decodeAudio = async (file) => {
     const arrayBuffer = await file.arrayBuffer();
@@ -140,7 +140,7 @@ export const bufferToMp3 = (buffer, downsampleFactor) => {
     // Safer approach for MP3 is to keep standard rate 44.1kHz but encode the "blocky" signal.
     // This compresses very well anyway because the data is repetitive (10 samples same value).
 
-    const mp3Encoder = new Mp3Encoder(channels, sampleRate, 128); // 128kbps standard
+    const mp3Encoder = new lamejs.Mp3Encoder(channels, sampleRate, 128); // 128kbps standard
 
     const maxSamples = 1152;
     const samplesLeft = buffer.getChannelData(0);
