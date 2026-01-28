@@ -81,7 +81,6 @@ function App() {
   };
 
   // PROCESSING LOGIC (Listens to DEBOUNCED state)
-  // PROCESSING LOGIC (Listens to DEBOUNCED state)
   useEffect(() => {
     if (!originalBuffer) return;
 
@@ -115,7 +114,16 @@ function App() {
             samplesRight
           });
 
+          // Watchdog Timer (20s timeout)
+          const timeoutId = setTimeout(() => {
+            worker.terminate();
+            setIsProcessing(false);
+            alert("MP3 Encoding Timeout. File might be too large or browser is blocking the worker.");
+          }, 20000);
+
           worker.onmessage = (e) => {
+            clearTimeout(timeoutId);
+
             if (e.data.type === 'success') {
               if (processedUrl) URL.revokeObjectURL(processedUrl);
               setProcessedUrl(URL.createObjectURL(e.data.blob));
@@ -129,6 +137,7 @@ function App() {
           };
 
           worker.onerror = (e) => {
+            clearTimeout(timeoutId);
             console.error("Worker Error details:", e);
             alert("MP3 Worker Error. See console.");
             setIsProcessing(false);
@@ -161,7 +170,7 @@ function App() {
       if (processedUrl) URL.revokeObjectURL(processedUrl);
       if (worker) worker.terminate();
     };
-  }, [originalBuffer, debouncedBitDepth, debouncedDownsampleFactor, exportFormat]); // depend on debounced vars
+  }, [originalBuffer, debouncedBitDepth, debouncedDownsampleFactor, exportFormat]);
 
   const updateProgress = () => {
     if (audioContextRef.current && isPlaying) {
@@ -299,7 +308,6 @@ function App() {
         <div className="absolute bottom-0 right-0 w-[500px] h-[500px] bg-gradient-to-tl from-cyan-900/10 to-transparent opacity-50" />
       </div>
 
-
       <div className="relative z-10 container mx-auto px-4 py-8 flex flex-col h-screen">
 
         {/* Header */}
@@ -426,7 +434,7 @@ function App() {
         </AnimatePresence>
 
       </div>
-    </div >
+    </div>
   );
 }
 

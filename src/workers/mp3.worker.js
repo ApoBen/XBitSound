@@ -10,10 +10,16 @@ self.onmessage = (e) => {
 
         const length = samplesLeft.length;
 
+        // OPTIMIZATION: Allocate buffers ONCE
+        const leftChunk = new Int16Array(sampleBlockSize);
+        const rightChunk = samplesRight ? new Int16Array(sampleBlockSize) : null;
+
         for (let i = 0; i < length; i += sampleBlockSize) {
             const chunkLen = Math.min(sampleBlockSize, length - i);
-            const leftChunk = new Int16Array(chunkLen);
-            const rightChunk = samplesRight ? new Int16Array(chunkLen) : null;
+
+            // Subarray is cheap (view), slice is copy. Use subarray.
+            const leftView = (chunkLen === sampleBlockSize) ? leftChunk : leftChunk.subarray(0, chunkLen);
+            const rightView = rightChunk ? ((chunkLen === sampleBlockSize) ? rightChunk : rightChunk.subarray(0, chunkLen)) : null;
 
             for (let j = 0; j < chunkLen; j++) {
                 // PCM Conversion
@@ -28,9 +34,9 @@ self.onmessage = (e) => {
                 }
             }
 
-            const mp3buf = rightChunk
-                ? mp3Encoder.encodeBuffer(leftChunk, rightChunk)
-                : mp3Encoder.encodeBuffer(leftChunk);
+            const mp3buf = rightView
+                ? mp3Encoder.encodeBuffer(leftView, rightView)
+                : mp3Encoder.encodeBuffer(leftView);
 
             if (mp3buf.length > 0) {
                 mp3Data.push(mp3buf);
