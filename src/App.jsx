@@ -256,11 +256,11 @@ function App() {
 
       {/* Dynamic Background */}
       <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none bg-[#0f0f13]">
-         {/* Static Gradients instead of heavy blurs for performance */}
-         <div className="absolute top-0 left-0 w-full h-[500px] bg-gradient-to-b from-purple-900/10 to-transparent opacity-50" />
-         <div className="absolute bottom-0 right-0 w-[500px] h-[500px] bg-gradient-to-tl from-cyan-900/10 to-transparent opacity-50" />
+        {/* Static Gradients instead of heavy blurs for performance */}
+        <div className="absolute top-0 left-0 w-full h-[500px] bg-gradient-to-b from-purple-900/10 to-transparent opacity-50" />
+        <div className="absolute bottom-0 right-0 w-[500px] h-[500px] bg-gradient-to-tl from-cyan-900/10 to-transparent opacity-50" />
       </div>
-      </div>
+
 
       <div className="relative z-10 container mx-auto px-4 py-8 flex flex-col h-screen">
 
