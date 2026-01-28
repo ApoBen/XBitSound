@@ -255,9 +255,11 @@ function App() {
     <div className="min-h-screen bg-[#0f0f13] text-white overflow-hidden relative selection:bg-cyan-500/30 font-sans">
 
       {/* Dynamic Background */}
-      <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none">
-        <div className="absolute top-[-20%] left-[-10%] w-[50%] h-[50%] bg-purple-900/20 rounded-full blur-[120px] animate-[pulse_8s_infinite]" />
-        <div className="absolute bottom-[-20%] right-[-10%] w-[50%] h-[50%] bg-cyan-900/20 rounded-full blur-[120px] animate-[pulse_10s_infinite]" />
+      <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none bg-[#0f0f13]">
+         {/* Static Gradients instead of heavy blurs for performance */}
+         <div className="absolute top-0 left-0 w-full h-[500px] bg-gradient-to-b from-purple-900/10 to-transparent opacity-50" />
+         <div className="absolute bottom-0 right-0 w-[500px] h-[500px] bg-gradient-to-tl from-cyan-900/10 to-transparent opacity-50" />
+      </div>
       </div>
 
       <div className="relative z-10 container mx-auto px-4 py-8 flex flex-col h-screen">
@@ -386,7 +388,7 @@ function App() {
         </AnimatePresence>
 
       </div>
-    </div>
+    </div >
   );
 }
 
