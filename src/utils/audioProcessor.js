@@ -151,47 +151,53 @@ export const bufferToWav = (buffer, bitDepth, downsampleFactor) => {
 }
 
 export const bufferToMp3 = (buffer, downsampleFactor) => {
-    const channels = buffer.numberOfChannels;
-    const sampleRate = buffer.sampleRate;
+    try {
+        const channels = buffer.numberOfChannels;
+        const sampleRate = buffer.sampleRate;
+        const mp3Encoder = new Mp3Encoder(channels, sampleRate, 128);
+        const sampleBlockSize = 1152;
+        const mp3Data = [];
 
-    const mp3Encoder = new Mp3Encoder(channels, sampleRate, 128);
+        const samplesLeft = buffer.getChannelData(0);
+        const samplesRight = channels > 1 ? buffer.getChannelData(1) : null;
+        const length = samplesLeft.length;
 
-    const maxSamples = 1152;
-    const samplesLeft = buffer.getChannelData(0);
-    const samplesRight = channels > 1 ? buffer.getChannelData(1) : undefined;
+        for (let i = 0; i < length; i += sampleBlockSize) {
+            const chunkLen = Math.min(sampleBlockSize, length - i);
+            const leftChunk = new Int16Array(chunkLen);
+            const rightChunk = samplesRight ? new Int16Array(chunkLen) : null;
 
-    const sampleBlockSize = 1152;
-    const mp3Data = [];
+            for (let j = 0; j < chunkLen; j++) {
+                // PCM Conversion
+                let valLeft = samplesLeft[i + j];
+                // Clamp and Scale
+                valLeft = Math.max(-1, Math.min(1, valLeft));
+                leftChunk[j] = (valLeft < 0 ? valLeft * 32768 : valLeft * 32767) | 0;
 
-    const length = samplesLeft.length;
-    for (let i = 0; i < length; i += sampleBlockSize) {
-        const leftChunk = [];
-        const rightChunk = [];
+                if (rightChunk) {
+                    let valRight = samplesRight[i + j];
+                    valRight = Math.max(-1, Math.min(1, valRight));
+                    rightChunk[j] = (valRight < 0 ? valRight * 32768 : valRight * 32767) | 0;
+                }
+            }
 
-        for (let j = 0; j < sampleBlockSize && (i + j) < length; j++) {
-            let valLeft = samplesLeft[i + j];
-            valLeft = (valLeft < 0 ? valLeft * 32768 : valLeft * 32767) | 0;
-            leftChunk.push(valLeft);
+            const mp3buf = rightChunk
+                ? mp3Encoder.encodeBuffer(leftChunk, rightChunk)
+                : mp3Encoder.encodeBuffer(leftChunk);
 
-            if (samplesRight) {
-                let valRight = samplesRight[i + j];
-                valRight = (valRight < 0 ? valRight * 32768 : valRight * 32767) | 0;
-                rightChunk.push(valRight);
-            } else {
-                rightChunk.push(valLeft);
+            if (mp3buf.length > 0) {
+                mp3Data.push(mp3buf);
             }
         }
 
-        const mp3buf = mp3Encoder.encodeBuffer(leftChunk, rightChunk);
+        const mp3buf = mp3Encoder.flush();
         if (mp3buf.length > 0) {
             mp3Data.push(mp3buf);
         }
-    }
 
-    const mp3buf = mp3Encoder.flush();
-    if (mp3buf.length > 0) {
-        mp3Data.push(mp3buf);
+        return new Blob(mp3Data, { type: 'audio/mp3' });
+    } catch (e) {
+        console.error("MP3 Encoding Fatal Error:", e);
+        throw e;
     }
-
-    return new Blob(mp3Data, { type: 'audio/mp3' });
 }
