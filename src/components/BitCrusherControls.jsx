@@ -1,86 +1,84 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 
-const BitCrusherControls = ({ bitDepth, setBitDepth, className = '' }) => {
+const Slider = ({ label, value, min, max, step, onChange, unit, marks }) => {
+    const percentage = ((value - min) / (max - min)) * 100;
+
     return (
-        <div className={`w-full max-w-2xl bg-white/5 backdrop-blur-md rounded-2xl p-6 border border-white/10 ${className}`}>
-            <div className="flex justify-between items-center mb-6">
-                <h3 className="text-lg font-semibold text-white/90">Bit Depth</h3>
-                <span className="px-3 py-1 bg-cyan-500/20 text-cyan-400 rounded-full text-sm font-mono border border-cyan-500/30">
-                    {bitDepth} Bits
-                </span>
+        <div className="w-full flex flex-col gap-2">
+            <div className="flex justify-between items-center text-xs font-mono tracking-wider">
+                <span className="text-white/60 uppercase">{label}</span>
+                <span className="text-cyan-400">{value} {unit}</span>
             </div>
 
-            <div className="relative h-12 flex items-center">
-                {/* Track */}
-                <div className="absolute w-full h-2 bg-white/10 rounded-full overflow-hidden">
+            <div className="relative h-6 flex items-center group">
+                {/* Track Background */}
+                <div className="absolute w-full h-1.5 bg-white/10 rounded-full overflow-hidden">
+                    {/* Fill */}
                     <motion.div
                         className="h-full bg-gradient-to-r from-purple-500 to-cyan-500"
-                        style={{ width: `${((bitDepth - 1) / 15) * 100}%` }}
+                        style={{ width: `${percentage}%` }}
+                        layoutId={`fill-${label}`}
                     />
                 </div>
 
-                {/* Custom Range Input */}
+                {/* Input */}
                 <input
                     type="range"
-                    min="1"
-                    max="16"
-                    step="1"
-                    value={bitDepth}
-                    onChange={(e) => setBitDepth(Number(e.target.value))}
-                    className="relative w-full h-12 opacity-0 cursor-pointer z-10"
+                    min={min}
+                    max={max}
+                    step={step}
+                    value={value}
+                    onChange={(e) => onChange(Number(e.target.value))}
+                    className="absolute w-full h-full opacity-0 cursor-pointer z-10"
                 />
 
-                {/* Thumb (Visual only, effectively follows the input via calculation or just purely CSS if possible, but for custom thumb we usually use standard range styling or a synced div. I will use standard range styling with Tailwind for simplicity but high polish) */}
-
-                {/* Custom styled thumb follower - Actually, let's stick to standard input styling overrides or a simple follower. 
-            For now, I'll rely on the native slider being invisible and drawing a fake thumb if I had complex requirements, 
-            but native sliders are easier to access. I'll make the input visible but styled.
-        */}
+                {/* Thumb Follower */}
+                <motion.div
+                    className="absolute w-4 h-4 bg-white rounded-full shadow-[0_0_10px_rgba(34,211,238,0.5)] pointer-events-none z-0"
+                    style={{ left: `calc(${percentage}% - 8px)` }}
+                    transition={{ type: "spring", stiffness: 300, damping: 30 }}
+                />
             </div>
 
-            <div className="flex justify-between text-xs text-white/30 font-mono mt-2">
-                <span>1 Bit (Crushed)</span>
-                <span>8 Bit (Retro)</span>
-                <span>16 Bit (Clean)</span>
-            </div>
+            {/* Marks */}
+            {marks && (
+                <div className="flex justify-between text-white/20 text-[10px] uppercase font-mono px-1">
+                    {marks.map((mark, i) => (
+                        <span key={i}>{mark}</span>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+}
 
-            <style jsx>{`
-        input[type=range] {
-          -webkit-appearance: none; 
-          background: transparent; 
-        }
-        
-        input[type=range]::-webkit-slider-thumb {
-          -webkit-appearance: none;
-          height: 24px;
-          width: 24px;
-          border-radius: 50%;
-          background: #ffffff;
-          cursor: pointer;
-          margin-top: -10px; 
-          box-shadow: 0 0 15px rgba(255, 255, 255, 0.5);
-          position: relative;
-          z-index: 20;
-        }
+const BitCrusherControls = ({ bitDepth, setBitDepth, downsampleFactor, setDownsampleFactor, className = '' }) => {
+    return (
+        <div className={`w-full max-w-lg flex flex-col gap-6 ${className}`}>
 
-        input[type=range]::-moz-range-thumb {
-            height: 24px;
-            width: 24px;
-            border-radius: 50%;
-            background: #ffffff;
-            cursor: pointer;
-            box-shadow: 0 0 15px rgba(255, 255, 255, 0.5);
-        }
-        
-        /* Reset track to be invisible so custom track shows */
-        input[type=range]::-webkit-slider-runnable-track {
-            width: 100%;
-            height: 4px;
-            cursor: pointer;
-            background: transparent;
-        }
-      `}</style>
+            <Slider
+                label="Resolution"
+                value={bitDepth}
+                min={1}
+                max={16}
+                step={1}
+                onChange={setBitDepth}
+                unit="BITS"
+                marks={['1 Bit (Crushed)', '8 Bit (Retro)', '16 Bit (Clean)']}
+            />
+
+            <Slider
+                label="Frequency"
+                value={downsampleFactor}
+                min={1}
+                max={20}
+                step={1}
+                onChange={setDownsampleFactor}
+                unit="Factor"
+                marks={['Original (1x)', 'Low (10x)', 'Lofi (20x)']}
+            />
+
         </div>
     );
 };

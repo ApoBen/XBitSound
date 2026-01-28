@@ -5,7 +5,7 @@ export const decodeAudio = async (file) => {
     return { audioBuffer, audioContext };
 };
 
-export const processAudio = (audioBuffer, bitDepth) => {
+export const processAudio = (audioBuffer, bitDepth, downsampleFactor = 1) => {
     const numberOfChannels = audioBuffer.numberOfChannels;
     const length = audioBuffer.length;
     const sampleRate = audioBuffer.sampleRate;
@@ -14,27 +14,38 @@ export const processAudio = (audioBuffer, bitDepth) => {
     const newBuffer = ctx.createBuffer(numberOfChannels, length, sampleRate);
 
     // Calculate quantization step
-    // bitDepth 16 -> 65536 steps. Float 32 has way more.
-    // We simulate lower resolution by stepping.
     const step = Math.pow(2, bitDepth - 1);
 
     for (let c = 0; c < numberOfChannels; c++) {
         const inputData = audioBuffer.getChannelData(c);
         const outputData = newBuffer.getChannelData(c);
 
+        let previousSample = 0;
+
         for (let i = 0; i < length; i++) {
-            let sample = inputData[i];
+            let sample;
 
-            // simple hard clipping
-            if (sample > 1) sample = 1;
-            if (sample < -1) sample = -1;
+            // Downsampling logic
+            // We only update the sample every "downsampleFactor" steps
+            if (i % Math.floor(downsampleFactor) === 0) {
+                sample = inputData[i];
 
-            if (bitDepth < 32) {
-                // Quantize
-                outputData[i] = Math.round(sample * step) / step;
+                // Hard clipping
+                if (sample > 1) sample = 1;
+                if (sample < -1) sample = -1;
+
+                // Bit Crushing
+                if (bitDepth < 32) {
+                    sample = Math.round(sample * step) / step;
+                }
+                previousSample = sample;
             } else {
-                outputData[i] = sample;
+                // Determine sample and hold or linear interpolation?
+                // For "retro" sound, sample and hold (repeat previous) is best.
+                sample = previousSample;
             }
+
+            outputData[i] = sample;
         }
     }
 

@@ -11,22 +11,25 @@ function App() {
   const [processedBuffer, setProcessedBuffer] = useState(null);
   const [processedUrl, setProcessedUrl] = useState(null);
   const [bitDepth, setBitDepth] = useState(12);
+  const [downsampleFactor, setDownsampleFactor] = useState(1);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [fileName, setFileName] = useState('');
+  const [currentTime, setCurrentTime] = useState(0);
 
   const audioContextRef = useRef(null);
   const sourceNodeRef = useRef(null);
   const startTimeRef = useRef(0);
   const pauseTimeRef = useRef(0);
+  const animationFrameRef = useRef(null);
 
   // Initialize AudioContext
   useEffect(() => {
     return () => {
-      // Cleanup on unmount
       if (audioContextRef.current) {
         audioContextRef.current.close().catch(() => { });
       }
+      cancelAnimationFrame(animationFrameRef.current);
     };
   }, []);
 
@@ -41,6 +44,7 @@ function App() {
   const handleFileSelected = async (file) => {
     setIsProcessing(true);
     setFileName(file.name);
+    stopAudio();
     try {
       const ctx = getAudioContext();
       if (ctx.state === 'suspended') {
@@ -48,16 +52,15 @@ function App() {
       }
       const { audioBuffer } = await decodeAudio(file);
       setOriginalBuffer(audioBuffer);
-      // Processing triggers automatically via effect
     } catch (error) {
       console.error("Error loading file:", error);
-      alert("Audio file could not be loaded. Please try another MP3 or WAV.");
+      alert("Audio file could not be loaded.");
     } finally {
       setIsProcessing(false);
     }
   };
 
-  // Re-process when buffer or bitDepth changes
+  // Re-process
   useEffect(() => {
     if (!originalBuffer) return;
 
@@ -65,7 +68,11 @@ function App() {
       setIsProcessing(true);
       await new Promise(r => setTimeout(r, 10)); // Yield to UI
 
-      const newBuffer = processAudio(originalBuffer, bitDepth);
+      const newBuffer = processAudio(originalBuffer, bitDepth, downsampleFactor);
+
+      // If duration changed significantly (unlikely for simple effects but possible), we might need to handle it.
+      // But downsampling here is just sample-and-hold, preserving duration.
+
       setProcessedBuffer(newBuffer);
 
       const wavBlob = bufferToWav(newBuffer);
@@ -75,8 +82,13 @@ function App() {
 
       setIsProcessing(false);
 
-      // Stop playback if parameter changes to avoid sync issues
-      stopAudio();
+      // If we were playing, we should ideally seamlessly transition, but stopping is safer for this demo to avoid glitching.
+      // We will maintain the position though.
+      if (isPlaying) {
+        stopAudio(false); // Don't reset position logic entirely
+        // Wait a tick and restart?
+        // For simplicity, just stop.
+      }
     };
 
     runProcessing();
@@ -84,9 +96,35 @@ function App() {
     return () => {
       if (processedUrl) URL.revokeObjectURL(processedUrl);
     };
-  }, [originalBuffer, bitDepth]);
+  }, [originalBuffer, bitDepth, downsampleFactor]);
 
-  const playAudio = async () => {
+  // Playback Loop for UI update
+  const updateProgress = () => {
+    if (audioContextRef.current && isPlaying) {
+      const now = audioContextRef.current.currentTime;
+      const elapsed = now - startTimeRef.current;
+      setCurrentTime(Math.min(elapsed, processedBuffer?.duration || 0));
+
+      if (elapsed >= (processedBuffer?.duration || 0)) {
+        setIsPlaying(false);
+        pauseTimeRef.current = 0;
+        setCurrentTime(0);
+        return;
+      }
+
+      animationFrameRef.current = requestAnimationFrame(updateProgress);
+    }
+  };
+
+  useEffect(() => {
+    if (isPlaying) {
+      animationFrameRef.current = requestAnimationFrame(updateProgress);
+    } else {
+      cancelAnimationFrame(animationFrameRef.current);
+    }
+  }, [isPlaying]);
+
+  const playAudio = async (startOffset) => {
     if (!processedBuffer) return;
     const ctx = getAudioContext();
 
@@ -94,7 +132,7 @@ function App() {
       await ctx.resume();
     }
 
-    // Stop existing source if any
+    // cleanup old source
     if (sourceNodeRef.current) {
       try { sourceNodeRef.current.stop(); } catch (e) { }
     }
@@ -103,38 +141,27 @@ function App() {
     source.buffer = processedBuffer;
     source.connect(ctx.destination);
 
-    // Robust resume calculation
-    // If we are at the end, restart
-    if (pauseTimeRef.current >= processedBuffer.duration) {
-      pauseTimeRef.current = 0;
-    }
+    // Determine start time
+    // If startOffset is provided, use it. Otherwise use pauseTimeRef.
+    let offset = startOffset !== undefined ? startOffset : pauseTimeRef.current;
 
-    const offset = pauseTimeRef.current;
+    // Boundary check
+    if (offset >= processedBuffer.duration) offset = 0;
 
     try {
       source.start(0, offset);
     } catch (e) {
-      console.warn("Could not start audio source:", e);
+      console.warn("Could not start:", e);
       return;
     }
 
     startTimeRef.current = ctx.currentTime - offset;
+    pauseTimeRef.current = offset; // Update ref to match reality
 
     source.onended = () => {
-      const currentTime = ctx.currentTime;
-      // If mostly finished, reset
-      const duration = processedBuffer.duration;
-      // We can't perfectly trust currentTime on end, but if we are active...
-      // Simplified: just update UI
-      // Better check: use an interval or just assume user wants to know it stopped
-
-      // BUT, don't set Playing false if we just paused it manually!
-      // Source is set to null on manual stop.
-      if (sourceNodeRef.current === source) { // It died naturally
-        setIsPlaying(false);
-        pauseTimeRef.current = 0; // Reset to start
-        sourceNodeRef.current = null;
-      }
+      // We handle "natural death" in the update loop mostly, 
+      // but strictly this event fires when buffer finishes or stop() is called.
+      // We rely on our update loop for UI state to avoid race conditions.
     };
 
     sourceNodeRef.current = source;
@@ -145,22 +172,41 @@ function App() {
     if (sourceNodeRef.current) {
       try {
         sourceNodeRef.current.stop();
-        // Calculate where we were
         const ctx = getAudioContext();
         pauseTimeRef.current = ctx.currentTime - startTimeRef.current;
+        setCurrentTime(pauseTimeRef.current);
       } catch (e) { }
       sourceNodeRef.current = null;
     }
     setIsPlaying(false);
   };
 
-  const stopAudio = () => {
+  const stopAudio = (reset = true) => {
     if (sourceNodeRef.current) {
       try { sourceNodeRef.current.stop(); } catch (e) { }
       sourceNodeRef.current = null;
     }
-    pauseTimeRef.current = 0;
     setIsPlaying(false);
+    if (reset) {
+      pauseTimeRef.current = 0;
+      setCurrentTime(0);
+    }
+  };
+
+  const handleSeek = (time) => {
+    // time is in seconds
+    const wasPlaying = isPlaying;
+    if (wasPlaying) {
+      // Pause internal, set new time, play
+      pauseAudio(); // updates pauseTimeRef, but we want to override it
+    }
+
+    pauseTimeRef.current = time;
+    setCurrentTime(time);
+
+    if (wasPlaying) {
+      playAudio(time);
+    }
   };
 
   const togglePlay = () => {
@@ -190,20 +236,19 @@ function App() {
       <div className="relative z-10 container mx-auto px-4 py-8 flex flex-col h-screen">
 
         {/* Header */}
-        <header className="flex items-center justify-between mb-8">
+        <header className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-gradient-to-br from-purple-500 to-cyan-500 rounded-xl shadow-lg shadow-purple-500/20 flex items-center justify-center">
               <div className="w-4 h-4 bg-white rounded-full animate-ping opacity-75" />
             </div>
-            <h1 className="text-3xl font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-white to-white/70">
+            <h1 className="text-2xl md:text-3xl font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-white to-white/70">
               XBitSound
             </h1>
           </div>
-          {/* Attribution Removed */}
         </header>
 
         {/* Main Content */}
-        <main className="flex-1 flex flex-col items-center justify-center gap-10 pb-32 w-full max-w-4xl mx-auto">
+        <main className="flex-1 flex flex-col items-center justify-center gap-6 pb-32 w-full max-w-4xl mx-auto">
 
           <AnimatePresence mode="wait">
             {!originalBuffer ? (
@@ -211,7 +256,7 @@ function App() {
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -20 }}
-                className="w-full flex justify-center"
+                className="w-full flex justify-center py-10"
               >
                 <DropZone onFileSelected={handleFileSelected} />
               </motion.div>
@@ -219,22 +264,22 @@ function App() {
               <motion.div
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
-                className="w-full flex flex-col items-center gap-8"
+                className="w-full flex flex-col items-center gap-6"
               >
                 {/* Visualizer and Controls Container */}
-                <div className="w-full bg-white/5 backdrop-blur-xl rounded-3xl p-8 border border-white/10 shadow-2xl relative overflow-hidden group">
+                <div className="w-full bg-white/5 backdrop-blur-xl rounded-3xl p-6 md:p-8 border border-white/10 shadow-2xl relative overflow-hidden group">
 
                   {/* Glow effect */}
                   <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-purple-500 to-cyan-500 opacity-50" />
 
-                  <div className="flex flex-col gap-8">
+                  <div className="flex flex-col gap-6">
                     <div className="flex items-center justify-between">
                       <div className="truncate pr-4">
-                        <h2 className="text-2xl font-bold text-white mb-1 truncate">
+                        <h2 className="text-xl md:text-2xl font-bold text-white mb-1 truncate">
                           {fileName}
                         </h2>
                         <p className="text-cyan-400/80 font-mono text-xs uppercase tracking-wide">
-                          {originalBuffer.duration.toFixed(1)}s • {bitDepth} BIT • {originalBuffer.sampleRate / 1000}kHz
+                          {originalBuffer.duration.toFixed(1)}s • {bitDepth} BIT • {downsampleFactor === 1 ? 'ORIGINAL' : 'DECIMATED'}
                         </p>
                       </div>
                       <button
@@ -255,6 +300,8 @@ function App() {
                       <BitCrusherControls
                         bitDepth={bitDepth}
                         setBitDepth={setBitDepth}
+                        downsampleFactor={downsampleFactor}
+                        setDownsampleFactor={setDownsampleFactor}
                         className="!bg-transparent !p-0 !border-0"
                       />
                       {isProcessing && (
@@ -280,7 +327,10 @@ function App() {
             <AudioPlayer
               isPlaying={isPlaying}
               onPlayPause={togglePlay}
-              onStop={stopAudio}
+              onStop={() => stopAudio(true)}
+              onSeek={handleSeek}
+              currentTime={currentTime}
+              duration={processedBuffer?.duration || 0}
               onDownload={downloadFile}
               processedUrl={processedUrl}
               originalName={fileName}
