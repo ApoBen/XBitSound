@@ -81,12 +81,16 @@ function App() {
   };
 
   // PROCESSING LOGIC (Listens to DEBOUNCED state)
+  // PROCESSING LOGIC (Listens to DEBOUNCED state)
   useEffect(() => {
     if (!originalBuffer) return;
+
+    let worker;
 
     const runProcessing = async () => {
       setIsProcessing(true);
       setProcessedUrl(null);
+
       try {
         await new Promise(r => setTimeout(r, 10)); // Yield to UI
 
@@ -96,24 +100,57 @@ function App() {
         const newBuffer = processAudio(originalBuffer, debouncedBitDepth, debouncedDownsampleFactor, ctx);
         setProcessedBuffer(newBuffer);
 
-        let blob;
         if (exportFormat === 'mp3') {
-          blob = bufferToMp3(newBuffer, debouncedDownsampleFactor);
+          // ASYNC WORKER ENCODING
+          worker = new Worker(new URL('./workers/mp3.worker.js', import.meta.url), { type: 'module' });
+
+          const channels = newBuffer.numberOfChannels;
+          const samplesLeft = newBuffer.getChannelData(0);
+          const samplesRight = channels > 1 ? newBuffer.getChannelData(1) : null;
+
+          worker.postMessage({
+            channels,
+            sampleRate: newBuffer.sampleRate,
+            samplesLeft,
+            samplesRight
+          });
+
+          worker.onmessage = (e) => {
+            if (e.data.type === 'success') {
+              if (processedUrl) URL.revokeObjectURL(processedUrl);
+              setProcessedUrl(URL.createObjectURL(e.data.blob));
+              setIsProcessing(false);
+              if (isPlaying) stopAudio(false);
+            } else {
+              alert("MP3 Encoding Error: " + e.data.message);
+              setIsProcessing(false);
+            }
+            worker.terminate();
+          };
+
+          worker.onerror = (e) => {
+            console.error("Worker Error details:", e);
+            alert("MP3 Worker Error. See console.");
+            setIsProcessing(false);
+            worker.terminate();
+          };
+
+          // Return safely, don't set isProcessing(false) yet, wait for worker
+          return;
+
         } else {
-          blob = bufferToWav(newBuffer, debouncedBitDepth, debouncedDownsampleFactor);
+          // SYNCHRONOUS WAV EXPORT (Fast enough usually, or <200ms)
+          const blob = bufferToWav(newBuffer, debouncedBitDepth, debouncedDownsampleFactor);
+
+          if (processedUrl) URL.revokeObjectURL(processedUrl);
+          setProcessedUrl(URL.createObjectURL(blob));
+          if (isPlaying) stopAudio(false);
+          setIsProcessing(false);
         }
 
-        if (processedUrl) URL.revokeObjectURL(processedUrl);
-        const url = URL.createObjectURL(blob);
-        setProcessedUrl(url);
-
-        if (isPlaying) {
-          stopAudio(false);
-        }
       } catch (err) {
         console.error("Processing error:", err);
         alert("Error generating audio: " + (err.message || String(err)));
-      } finally {
         setIsProcessing(false);
       }
     };
@@ -122,6 +159,7 @@ function App() {
 
     return () => {
       if (processedUrl) URL.revokeObjectURL(processedUrl);
+      if (worker) worker.terminate();
     };
   }, [originalBuffer, debouncedBitDepth, debouncedDownsampleFactor, exportFormat]); // depend on debounced vars
 
