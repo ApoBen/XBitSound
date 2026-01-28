@@ -17,9 +17,12 @@ function App() {
   const [fileName, setFileName] = useState('');
   const [currentTime, setCurrentTime] = useState(0);
   const [exportFormat, setExportFormat] = useState('wav'); // Default to WAV as requested
+  const [volume, setVolume] = useState(0.8);
+  const [isMuted, setIsMuted] = useState(false);
 
   const audioContextRef = useRef(null);
   const sourceNodeRef = useRef(null);
+  const gainNodeRef = useRef(null);
   const startTimeRef = useRef(0);
   const pauseTimeRef = useRef(0);
   const animationFrameRef = useRef(null);
@@ -65,7 +68,7 @@ function App() {
 
     const runProcessing = async () => {
       setIsProcessing(true);
-      setProcessedUrl(null); // Clear stale URL preventing wrong format download
+      setProcessedUrl(null);
       try {
         await new Promise(r => setTimeout(r, 10)); // Yield to UI
 
@@ -143,7 +146,15 @@ function App() {
 
     const source = ctx.createBufferSource();
     source.buffer = processedBuffer;
-    source.connect(ctx.destination);
+
+    // Volume Control Graph
+    const gainNode = ctx.createGain();
+    gainNode.gain.value = isMuted ? 0 : volume;
+
+    source.connect(gainNode);
+    gainNode.connect(ctx.destination);
+
+    gainNodeRef.current = gainNode;
 
     let offset = startOffset !== undefined ? startOffset : pauseTimeRef.current;
     if (offset >= processedBuffer.duration) offset = 0;
@@ -161,6 +172,13 @@ function App() {
     sourceNodeRef.current = source;
     setIsPlaying(true);
   };
+
+  // Real-time volume update
+  useEffect(() => {
+    if (gainNodeRef.current) {
+      gainNodeRef.current.gain.value = isMuted ? 0 : volume;
+    }
+  }, [volume, isMuted]);
 
   const pauseAudio = () => {
     if (sourceNodeRef.current) {

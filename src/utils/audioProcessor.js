@@ -1,4 +1,4 @@
-import * as lamejs from 'lamejs';
+import { Mp3Encoder } from '@breezystack/lamejs';
 
 export const decodeAudio = async (file) => {
     const arrayBuffer = await file.arrayBuffer();
@@ -154,7 +154,7 @@ export const bufferToMp3 = (buffer, downsampleFactor) => {
     const channels = buffer.numberOfChannels;
     const sampleRate = buffer.sampleRate;
 
-    const mp3Encoder = new lamejs.Mp3Encoder(channels, sampleRate, 128);
+    const mp3Encoder = new Mp3Encoder(channels, sampleRate, 128);
 
     const maxSamples = 1152;
     const samplesLeft = buffer.getChannelData(0);
