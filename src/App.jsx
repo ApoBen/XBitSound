@@ -68,10 +68,10 @@ function App() {
       setIsProcessing(true);
       await new Promise(r => setTimeout(r, 10)); // Yield to UI
 
-      const newBuffer = processAudio(originalBuffer, bitDepth, downsampleFactor);
+      // Pass the audio context to avoid creating new ones and hitting limit
+      const ctx = getAudioContext();
 
-      // If duration changed significantly (unlikely for simple effects but possible), we might need to handle it.
-      // But downsampling here is just sample-and-hold, preserving duration.
+      const newBuffer = processAudio(originalBuffer, bitDepth, downsampleFactor, ctx);
 
       setProcessedBuffer(newBuffer);
 
@@ -82,12 +82,9 @@ function App() {
 
       setIsProcessing(false);
 
-      // If we were playing, we should ideally seamlessly transition, but stopping is safer for this demo to avoid glitching.
-      // We will maintain the position though.
       if (isPlaying) {
-        stopAudio(false); // Don't reset position logic entirely
-        // Wait a tick and restart?
-        // For simplicity, just stop.
+        // If parameters change while playing, stop to avoid glitching
+        stopAudio(false);
       }
     };
 
@@ -142,10 +139,8 @@ function App() {
     source.connect(ctx.destination);
 
     // Determine start time
-    // If startOffset is provided, use it. Otherwise use pauseTimeRef.
     let offset = startOffset !== undefined ? startOffset : pauseTimeRef.current;
 
-    // Boundary check
     if (offset >= processedBuffer.duration) offset = 0;
 
     try {
@@ -156,12 +151,10 @@ function App() {
     }
 
     startTimeRef.current = ctx.currentTime - offset;
-    pauseTimeRef.current = offset; // Update ref to match reality
+    pauseTimeRef.current = offset;
 
     source.onended = () => {
-      // We handle "natural death" in the update loop mostly, 
-      // but strictly this event fires when buffer finishes or stop() is called.
-      // We rely on our update loop for UI state to avoid race conditions.
+      // Loop handled by RAF
     };
 
     sourceNodeRef.current = source;
@@ -194,11 +187,9 @@ function App() {
   };
 
   const handleSeek = (time) => {
-    // time is in seconds
     const wasPlaying = isPlaying;
     if (wasPlaying) {
-      // Pause internal, set new time, play
-      pauseAudio(); // updates pauseTimeRef, but we want to override it
+      pauseAudio();
     }
 
     pauseTimeRef.current = time;

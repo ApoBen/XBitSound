@@ -5,12 +5,28 @@ export const decodeAudio = async (file) => {
     return { audioBuffer, audioContext };
 };
 
-export const processAudio = (audioBuffer, bitDepth, downsampleFactor = 1) => {
+export const processAudio = (audioBuffer, bitDepth, downsampleFactor = 1, audioContext) => {
     const numberOfChannels = audioBuffer.numberOfChannels;
     const length = audioBuffer.length;
     const sampleRate = audioBuffer.sampleRate;
 
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    // Reuse provided context or create an offline one (preferred over creating new AudioContexts repeatedly)
+    // If audioContext is not provided or is closed, fallback.
+    // OfflineAudioContext is much lighter for this purpose as it doesn't hook to hardware output.
+    let ctx = audioContext;
+    if (!ctx || ctx.state === 'closed') {
+        try {
+            ctx = new OfflineAudioContext(numberOfChannels, length, sampleRate);
+        } catch (e) {
+            // Fallback for Safari/Legacy if OfflineAudioContext is weird, ensuring we don't crash but might leak if not careful.
+            // But usually OfflineAudioContext is fine.
+            ctx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+    }
+
+    // If using the main AudioContext, createBuffer is cheap.
+    // If using OfflineAudioContext, it's also cheap.
+
     const newBuffer = ctx.createBuffer(numberOfChannels, length, sampleRate);
 
     // Calculate quantization step
@@ -26,7 +42,6 @@ export const processAudio = (audioBuffer, bitDepth, downsampleFactor = 1) => {
             let sample;
 
             // Downsampling logic
-            // We only update the sample every "downsampleFactor" steps
             if (i % Math.floor(downsampleFactor) === 0) {
                 sample = inputData[i];
 
@@ -40,8 +55,6 @@ export const processAudio = (audioBuffer, bitDepth, downsampleFactor = 1) => {
                 }
                 previousSample = sample;
             } else {
-                // Determine sample and hold or linear interpolation?
-                // For "retro" sound, sample and hold (repeat previous) is best.
                 sample = previousSample;
             }
 
@@ -95,7 +108,6 @@ export const bufferToWav = (buffer) => {
         pos++;
     }
 
-    // helper functions
     function setUint16(data) {
         view.setUint16(pos, data, true);
         pos += 2;
