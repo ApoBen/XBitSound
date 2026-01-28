@@ -22,45 +22,52 @@ const Visualizer = ({ audioBuffer, isPlaying }) => {
         const draw = () => {
             ctx.clearRect(0, 0, width, height);
             ctx.lineWidth = 2;
-            ctx.strokeStyle = '#22d3ee'; // Cyan-400
+            ctx.fillStyle = '#22d3ee'; // Using fill for bars logic is often faster/cleaner for dense audio
+
             ctx.beginPath();
 
-            // Simple waveform drawing (static)
-            // To make it dynamic/animated during playback would require an AnalyserNode connected to the source.
-            // Since our architecture uses a one-shot buffer source, connecting an AnalyserNode is possible but requires passing the node.
-
-            // For now, let's just draw the static waveform effectively to look cool.
-            // If isPlaying is true, we could maybe animate a scanline or something.
+            // OPTIMIZATION: Limit the inner loop. 
+            // Instead of scanning every single sample in 'step' (which could be 10k+),
+            // we scan a fixed number of representative samples.
+            const samplesToCheck = Math.min(step, 50); // check max 50 points per pixel column
+            const skip = Math.ceil(step / samplesToCheck);
 
             for (let i = 0; i < width; i++) {
                 const index = i * step;
-                // Simple downsampling: take max/min in chunk or just nth sample
-                // For performance, just nth sample
                 let min = 1.0;
                 let max = -1.0;
-                for (let j = 0; j < step; j++) {
-                    const datum = channelData[index + j];
+
+                // Optimized inner loop
+                for (let j = 0; j < samplesToCheck; j++) {
+                    // Check bounds
+                    if ((index + j * skip) >= totalSamples) break;
+
+                    const datum = channelData[index + (j * skip)];
                     if (datum < min) min = datum;
                     if (datum > max) max = datum;
                 }
 
-                // Draw vertical line for the chunk (better for dense audio)
-                ctx.moveTo(i, (1 + min) * amp);
-                ctx.lineTo(i, (1 + max) * amp);
+                // Fallback for silence
+                if (max < min) { min = 0; max = 0; }
+
+                // Map to Height
+                // Center is height/2
+                // Val -1 -> height
+                // Val 1 -> 0
+                const yMin = (1 - min) * (height / 2);
+                const yMax = (1 - max) * (height / 2);
+
+                // Draw vertical line from yMax to yMin
+                ctx.moveTo(i, yMax);
+                ctx.lineTo(i, yMin);
             }
 
             ctx.stroke();
-
-            if (isPlaying) {
-                // Add a playback cursor or effect?
-                // Let's rely on CSS animations for "liveness" on the player to allow this to be a nice static waveform view
-            }
         };
 
-        // Resize handler for responsiveness could be here, but fixed width for now or percentage
-        // Actually, let's use clientWidth if we want full width
-
-        draw();
+        // Defer drawing to next animation frame to let React render happen first
+        const frame = requestAnimationFrame(draw);
+        return () => cancelAnimationFrame(frame);
 
     }, [audioBuffer]);
 
