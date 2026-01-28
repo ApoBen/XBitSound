@@ -23,7 +23,6 @@ function App() {
   const pauseTimeRef = useRef(0);
   const animationFrameRef = useRef(null);
 
-  // Initialize AudioContext
   useEffect(() => {
     return () => {
       if (audioContextRef.current) {
@@ -60,30 +59,33 @@ function App() {
     }
   };
 
-  // Re-process
   useEffect(() => {
     if (!originalBuffer) return;
 
     const runProcessing = async () => {
       setIsProcessing(true);
-      await new Promise(r => setTimeout(r, 10)); // Yield to UI
+      try {
+        await new Promise(r => setTimeout(r, 10)); // Yield to UI
 
-      const ctx = getAudioContext();
+        const ctx = getAudioContext();
 
-      const newBuffer = processAudio(originalBuffer, bitDepth, downsampleFactor, ctx);
+        const newBuffer = processAudio(originalBuffer, bitDepth, downsampleFactor, ctx);
 
-      setProcessedBuffer(newBuffer);
+        setProcessedBuffer(newBuffer);
 
-      // Pass optimization params to bufferToWav
-      const wavBlob = bufferToWav(newBuffer, bitDepth, downsampleFactor);
-      if (processedUrl) URL.revokeObjectURL(processedUrl);
-      const url = URL.createObjectURL(wavBlob);
-      setProcessedUrl(url);
+        const wavBlob = bufferToWav(newBuffer, bitDepth, downsampleFactor);
+        if (processedUrl) URL.revokeObjectURL(processedUrl);
+        const url = URL.createObjectURL(wavBlob);
+        setProcessedUrl(url);
 
-      setIsProcessing(false);
-
-      if (isPlaying) {
-        stopAudio(false);
+        if (isPlaying) {
+          stopAudio(false);
+        }
+      } catch (err) {
+        console.error("Processing error:", err);
+        // Auto-recover logic or UI feedback could go here
+      } finally {
+        setIsProcessing(false);
       }
     };
 
@@ -94,7 +96,6 @@ function App() {
     };
   }, [originalBuffer, bitDepth, downsampleFactor]);
 
-  // Playback Loop for UI update
   const updateProgress = () => {
     if (audioContextRef.current && isPlaying) {
       const now = audioContextRef.current.currentTime;
