@@ -10,13 +10,20 @@ function App() {
   const [originalBuffer, setOriginalBuffer] = useState(null);
   const [processedBuffer, setProcessedBuffer] = useState(null);
   const [processedUrl, setProcessedUrl] = useState(null);
+
+  // IMMEDIATE state for slider UI (fast)
   const [bitDepth, setBitDepth] = useState(12);
   const [downsampleFactor, setDownsampleFactor] = useState(1);
+
+  // DEBOUNCED state for audio processing (delayed)
+  const [debouncedBitDepth, setDebouncedBitDepth] = useState(12);
+  const [debouncedDownsampleFactor, setDebouncedDownsampleFactor] = useState(1);
+
   const [isProcessing, setIsProcessing] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [fileName, setFileName] = useState('');
   const [currentTime, setCurrentTime] = useState(0);
-  const [exportFormat, setExportFormat] = useState('wav'); // Default to WAV as requested
+  const [exportFormat, setExportFormat] = useState('wav');
   const [volume, setVolume] = useState(0.8);
   const [isMuted, setIsMuted] = useState(false);
 
@@ -26,6 +33,16 @@ function App() {
   const startTimeRef = useRef(0);
   const pauseTimeRef = useRef(0);
   const animationFrameRef = useRef(null);
+
+  // DEBOUNCE LOGIC
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedBitDepth(bitDepth);
+      setDebouncedDownsampleFactor(downsampleFactor);
+    }, 300); // 300ms delay
+
+    return () => clearTimeout(handler);
+  }, [bitDepth, downsampleFactor]);
 
   useEffect(() => {
     return () => {
@@ -63,6 +80,7 @@ function App() {
     }
   };
 
+  // PROCESSING LOGIC (Listens to DEBOUNCED state)
   useEffect(() => {
     if (!originalBuffer) return;
 
@@ -74,15 +92,15 @@ function App() {
 
         const ctx = getAudioContext();
 
-        const newBuffer = processAudio(originalBuffer, bitDepth, downsampleFactor, ctx);
+        // Use DEBOUNCED values here
+        const newBuffer = processAudio(originalBuffer, debouncedBitDepth, debouncedDownsampleFactor, ctx);
         setProcessedBuffer(newBuffer);
 
-        // Generate Blob based on selected format
         let blob;
         if (exportFormat === 'mp3') {
-          blob = bufferToMp3(newBuffer, downsampleFactor);
+          blob = bufferToMp3(newBuffer, debouncedDownsampleFactor);
         } else {
-          blob = bufferToWav(newBuffer, bitDepth, downsampleFactor);
+          blob = bufferToWav(newBuffer, debouncedBitDepth, debouncedDownsampleFactor);
         }
 
         if (processedUrl) URL.revokeObjectURL(processedUrl);
@@ -105,7 +123,7 @@ function App() {
     return () => {
       if (processedUrl) URL.revokeObjectURL(processedUrl);
     };
-  }, [originalBuffer, bitDepth, downsampleFactor, exportFormat]);
+  }, [originalBuffer, debouncedBitDepth, debouncedDownsampleFactor, exportFormat]); // depend on debounced vars
 
   const updateProgress = () => {
     if (audioContextRef.current && isPlaying) {
@@ -147,7 +165,6 @@ function App() {
     const source = ctx.createBufferSource();
     source.buffer = processedBuffer;
 
-    // Volume Control Graph
     const gainNode = ctx.createGain();
     gainNode.gain.value = isMuted ? 0 : volume;
 
@@ -173,7 +190,6 @@ function App() {
     setIsPlaying(true);
   };
 
-  // Real-time volume update
   useEffect(() => {
     if (gainNodeRef.current) {
       gainNodeRef.current.gain.value = isMuted ? 0 : volume;
