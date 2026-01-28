@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Play, Pause, Download, RotateCcw } from 'lucide-react';
+import { Play, Pause, Download, RotateCcw, Volume2, VolumeX } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 const AudioPlayer = ({
@@ -11,7 +11,11 @@ const AudioPlayer = ({
     duration,
     onDownload,
     processedUrl,
-    originalName
+    originalName,
+    volume,
+    setVolume,
+    isMuted,
+    setIsMuted
 }) => {
     const progressBarRef = useRef(null);
 
@@ -87,17 +91,47 @@ const AudioPlayer = ({
                     >
                         {isPlaying ? <Pause size={20} fill="black" /> : <Play size={20} fill="black" className="ml-1" />}
                     </button>
+
                 </div>
 
-                {/* Actions */}
-                <div className="flex items-center justify-end gap-4 flex-1">
+                {/* Actions: Volume + Download */}
+                <div className="flex items-center justify-end gap-2 md:gap-4 flex-1">
+
+                    {/* Volume Slider - Hidden on tiny screens if needed, but flex wrap helps */}
+                    <div className="flex items-center gap-2 group mr-2">
+                        <button
+                            onClick={() => setIsMuted(!isMuted)}
+                            className="text-white/70 hover:text-white transition-colors"
+                        >
+                            {isMuted || volume === 0 ? <VolumeX size={18} /> : <Volume2 size={18} />}
+                        </button>
+                        <div className="w-20 h-1 bg-white/10 rounded-full relative cursor-pointer group-hover:bg-white/20 transition-colors">
+                            <input
+                                type="range"
+                                min="0"
+                                max="1"
+                                step="0.01"
+                                value={isMuted ? 0 : volume}
+                                onChange={(e) => {
+                                    setVolume(parseFloat(e.target.value));
+                                    if (isMuted) setIsMuted(false);
+                                }}
+                                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                            />
+                            <div
+                                className="h-full bg-cyan-400 rounded-full"
+                                style={{ width: `${(isMuted ? 0 : volume) * 100}%` }}
+                            />
+                        </div>
+                    </div>
+
                     <button
                         onClick={onDownload}
                         disabled={!processedUrl}
-                        className="flex items-center gap-2 px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed border border-white/5 text-sm font-medium whitespace-nowrap"
+                        className="flex items-center gap-2 px-3 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed border border-white/5 text-sm font-medium whitespace-nowrap"
                     >
                         <Download size={16} />
-                        <span className="hidden sm:inline">Download</span>
+                        <span className="hidden md:inline">Download</span>
                     </button>
                 </div>
             </div>

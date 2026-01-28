@@ -343,6 +343,10 @@ function App() {
               onDownload={downloadFile}
               processedUrl={processedUrl}
               originalName={fileName}
+              volume={volume}
+              setVolume={setVolume}
+              isMuted={isMuted}
+              setIsMuted={setIsMuted}
             />
           )}
         </AnimatePresence>
