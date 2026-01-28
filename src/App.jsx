@@ -65,6 +65,7 @@ function App() {
 
     const runProcessing = async () => {
       setIsProcessing(true);
+      setProcessedUrl(null); // Clear stale URL preventing wrong format download
       try {
         await new Promise(r => setTimeout(r, 10)); // Yield to UI
 
@@ -90,6 +91,7 @@ function App() {
         }
       } catch (err) {
         console.error("Processing error:", err);
+        alert("Error generating audio: " + (err.message || String(err)));
       } finally {
         setIsProcessing(false);
       }
