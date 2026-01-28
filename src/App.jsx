@@ -68,14 +68,14 @@ function App() {
       setIsProcessing(true);
       await new Promise(r => setTimeout(r, 10)); // Yield to UI
 
-      // Pass the audio context to avoid creating new ones and hitting limit
       const ctx = getAudioContext();
 
       const newBuffer = processAudio(originalBuffer, bitDepth, downsampleFactor, ctx);
 
       setProcessedBuffer(newBuffer);
 
-      const wavBlob = bufferToWav(newBuffer);
+      // Pass optimization params to bufferToWav
+      const wavBlob = bufferToWav(newBuffer, bitDepth, downsampleFactor);
       if (processedUrl) URL.revokeObjectURL(processedUrl);
       const url = URL.createObjectURL(wavBlob);
       setProcessedUrl(url);
@@ -83,7 +83,6 @@ function App() {
       setIsProcessing(false);
 
       if (isPlaying) {
-        // If parameters change while playing, stop to avoid glitching
         stopAudio(false);
       }
     };
@@ -129,7 +128,6 @@ function App() {
       await ctx.resume();
     }
 
-    // cleanup old source
     if (sourceNodeRef.current) {
       try { sourceNodeRef.current.stop(); } catch (e) { }
     }
@@ -138,9 +136,7 @@ function App() {
     source.buffer = processedBuffer;
     source.connect(ctx.destination);
 
-    // Determine start time
     let offset = startOffset !== undefined ? startOffset : pauseTimeRef.current;
-
     if (offset >= processedBuffer.duration) offset = 0;
 
     try {
@@ -152,10 +148,6 @@ function App() {
 
     startTimeRef.current = ctx.currentTime - offset;
     pauseTimeRef.current = offset;
-
-    source.onended = () => {
-      // Loop handled by RAF
-    };
 
     sourceNodeRef.current = source;
     setIsPlaying(true);
